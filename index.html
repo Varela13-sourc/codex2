@@ -153,7 +153,7 @@
               <div class="flex gap-2 mb-4">
                   <select id="selInvItem" class="bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-xs flex-1 outline-none font-bold text-slate-700 focus:border-panBlue"></select>
                   <input id="inpInvCant" type="number" class="bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-xs w-20 text-center outline-none font-bold text-slate-700 focus:border-panBlue" placeholder="Cant">
-                  <button type="button" id="btnAddItem" class="text-[10px] font-bold bg-white hover:bg-panBlue hover:text-white px-4 py-2 rounded-xl border-2 border-slate-100 text-slate-500 transition shadow-sm uppercase"><i class="fa-solid fa-plus"></i> Añadir</button>
+                  <button type="button" id="btnAddItem" class="text-[10px] font-bold bg-white hover:bg-panBlue hover:text-white px-4 py-2 rounded-xl border-2 border-slate-100 text-slate-500 transition shadow-sm uppercase"><i class="fa-solid fa-plus"></i> Agregar</button>
               </div>
               <div id="itemsContainer" class="space-y-3"></div>
             </div>
@@ -217,6 +217,7 @@
                 <div class="flex gap-2">
                   <input id="histSearch" type="text" placeholder="Buscar historial" oninput="App.filterHistorial()" class="bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 outline-none font-semibold">
                   <select id="histActionFilter" onchange="App.filterHistorial()" class="bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 outline-none font-bold"><option value="">TODAS</option></select>
+                  <button type="button" onclick="App.exportHistorial()" class="px-3 py-2 rounded-xl bg-white border-2 border-slate-200 text-slate-600 font-bold text-[10px] uppercase tracking-widest shadow-sm"><i class="fa-solid fa-file-export"></i> Exportar</button>
                 </div>
               </div>
               <div id="historialList" class="space-y-2 max-h-52 overflow-y-auto custom-scrollbar"></div>
@@ -226,6 +227,7 @@
                 <h4 class="font-bold text-sm text-slate-700"><i class="fa-solid fa-boxes-stacked"></i> Movimientos de inventario</h4>
                 <div class="flex gap-2">
                   <input id="movSearch" type="text" placeholder="Buscar movimiento" oninput="App.filterMovimientos()" class="bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 outline-none font-semibold">
+                  <button type="button" onclick="App.exportMovimientos()" class="px-3 py-2 rounded-xl bg-white border-2 border-slate-200 text-slate-600 font-bold text-[10px] uppercase tracking-widest shadow-sm"><i class="fa-solid fa-file-export"></i> Exportar</button>
                   <button type="button" onclick="App.openInventarioMovimientoActual()" class="px-4 py-2 rounded-xl bg-panBlue text-white font-bold text-[10px] uppercase tracking-widest shadow-sm"><i class="fa-solid fa-plus"></i> Movimiento</button>
                 </div>
               </div>
@@ -308,7 +310,7 @@ let CATALOGOS = {};
 const STATUS_TRANSITIONS = {
     NUEVO: ['RECIBIDA','AUTORIZADA'],
     RECIBIDA: ['AUTORIZADA','CANCELADA'],
-    AUTORIZADA: ['EN_DESPACHO','CANCELADA'],
+    AUTORIZADA: ['EN_DESPACHO','AGENDADA_RECOLECCION','CANCELADA'],
     EN_DESPACHO: ['AGENDADA_RECOLECCION','PENDIENTE_RECOGER','CANCELADA'],
     AGENDADA_RECOLECCION: ['PENDIENTE_RECOGER','VENCIDA','CANCELADA'],
     PENDIENTE_RECOGER: ['PARCIALMENTE_RECOGIDA','RECOGIDA','VENCIDA','EN_COMPROBACION','CANCELADA'],
@@ -321,7 +323,7 @@ const STATUS_TRANSITIONS = {
     CANCELADA: []
 };
 const Store={session:null,currentView:'dashboard',data:[],filteredData:[],stats:{},isEditMode:false,currentEditId:null,currentRecord:null,currentHistory:[],currentMovements:[],lastStockSummary:[], rowIndex: null};
-const API={async request(action,payload){try{const p=typeof action==='string'?Object.assign({tipoRegistro:action==='updateGestion'?'ACTUALIZAR':action},payload||{}):action;const r=await fetch(CONFIG.API_URL,{method:"POST",body:JSON.stringify(p)});return await r.json();}catch(e){console.error(e);return{ok:false,message:"Error de red"};}}};
+const API={async request(action,payload){const ctrl=new AbortController();const t=setTimeout(()=>ctrl.abort(),45000);try{const p=typeof action==='string'?Object.assign({tipoRegistro:action==='updateGestion'?'ACTUALIZAR':action},payload||{}):action;const r=await fetch(CONFIG.API_URL,{method:"POST",body:JSON.stringify(p),signal:ctrl.signal});clearTimeout(t);return await r.json();}catch(e){clearTimeout(t);console.error(e);return{ok:false,message:e.name==='AbortError'?'La API tardó demasiado en responder. Intenta de nuevo.':'Error de red o respuesta inválida de la API.'};}}};
 
 const UI={
     init(){ 
@@ -610,9 +612,17 @@ const App = {
                 if(rList.ok){ 
                     Store.data = rList.rows || []; 
                     this.doSearch(); 
+                } else {
+                    Store.data = [];
+                    this.renderTable([]);
+                    document.getElementById('tableCount').textContent = "0 ITEMS";
+                    document.getElementById('tableBody').innerHTML = `<tr><td colspan="8" class="p-8 text-center text-red-500 font-bold bg-white">${rList.message || 'No fue posible cargar los registros.'}</td></tr>`;
                 }
             }
-        } catch(e){} finally { UI.toggleLoader(false); } 
+        } catch(e){
+            console.error(e);
+            if(Store.currentView !== 'dashboard') document.getElementById('tableBody').innerHTML = `<tr><td colspan="8" class="p-8 text-center text-red-500 font-bold bg-white">No fue posible cargar la información. Revisa la conexión con Apps Script.</td></tr>`;
+        } finally { UI.toggleLoader(false); } 
     },
     doSearch(){
         const q = String(document.getElementById('searchInput').value || '').trim().toLowerCase();
@@ -694,13 +704,32 @@ const App = {
     },
     isCommittedStatus(s){
         const st = String(s||'').trim().toUpperCase().replace(/\s+/g,'_');
-        // Only treat a gestion as "comprometida" when its status implies that items have been
-        // authorized and are awaiting pickup. This avoids showing partial panels for records
-        // whose statuses do not actually have pending pickup work.
+        // Estados que mantienen una reserva activa contra inventario.
+        return [
+            'AUTORIZADA',
+            'EN_DESPACHO',
+            'AGENDADA_RECOLECCION',
+            'PENDIENTE_RECOGER',
+            'PARCIALMENTE_RECOGIDA'
+        ].includes(st);
+    },
+    isAgendaStatus(s){
+        const st = String(s||'').trim().toUpperCase().replace(/\s+/g,'_');
+        return [
+            'AUTORIZADA',
+            'EN_DESPACHO',
+            'AGENDADA_RECOLECCION',
+            'PENDIENTE_RECOGER',
+            'PARCIALMENTE_RECOGIDA'
+        ].includes(st);
+    },
+    isPickupStatus(s){
+        const st = String(s||'').trim().toUpperCase().replace(/\s+/g,'_');
         return [
             'EN_DESPACHO',
             'AGENDADA_RECOLECCION',
-            'PENDIENTE_RECOGER'
+            'PENDIENTE_RECOGER',
+            'PARCIALMENTE_RECOGIDA'
         ].includes(st);
     },
     fillGestionOps(r){
@@ -737,12 +766,14 @@ const App = {
             compItems = this.subtractItems(picked, compReg);
         }
         const terminal = ['RECIBIDA','AUTORIZADA','CANCELADA','VENCIDA','COMPROBADA'].includes(st);
-        const canCollect = this.isCommittedStatus(st) && recItems.length > 0;
+        const hasAgendaData = !!(r.Recoleccion_Fecha_Agendada || r.Recoleccion_Fecha_Limite);
+        const canAgenda = (this.isAgendaStatus(st) && recItems.length > 0) || hasAgendaData;
+        const canCollect = this.isPickupStatus(st) && recItems.length > 0;
         const canCheck = !terminal && picked.length > 0 && compItems.length > 0;
         document.getElementById('recItem').innerHTML = '<option value="">-- Insumo pendiente --</option>' + recItems.map(i=>`<option value="${i.Item}" data-max="${i.Cantidad}">${i.Item} | Pendiente: ${i.Cantidad}</option>`).join('');
         document.getElementById('compItem').innerHTML = '<option value="">-- Insumo por comprobar --</option>' + compItems.map(i=>`<option value="${i.Item}" data-max="${i.Cantidad}">${i.Item} | Pendiente: ${i.Cantidad}</option>`).join('');
         document.getElementById('gestionOpsSection').classList.toggle('hidden', !Store.currentEditId);
-        UI.syncFormTabs({agenda: canCollect, recoleccion: canCollect, comprobacion: canCheck, historial: !!Store.currentEditId, movimientos: !!Store.currentEditId});
+        UI.syncFormTabs({agenda: canAgenda, recoleccion: canCollect, comprobacion: canCheck, historial: !!Store.currentEditId, movimientos: !!Store.currentEditId});
         this.renderAgendaWarning(r);
         document.getElementById('historialList').innerHTML = '<div class="text-xs text-slate-400 font-bold italic">Cargando historial...</div>';
         document.getElementById('movimientosList').innerHTML = '<div class="text-xs text-slate-400 font-bold italic">Cargando movimientos...</div>';
@@ -803,6 +834,31 @@ const App = {
         const q = String(document.getElementById('movSearch')?.value || '').toLowerCase();
         const rows = (Store.currentMovements||[]).filter(x => !q || Object.values(x).some(v=>String(v||'').toLowerCase().includes(q)));
         document.getElementById('movimientosList').innerHTML = rows.length ? rows.map(x=>`<div class="bg-white border border-slate-100 rounded-2xl px-4 py-3"><div class="flex justify-between gap-3"><span class="text-[10px] font-black text-panBlue uppercase">${x.tipo}</span><span class="text-[9px] font-bold text-slate-400">${String(x.t||'').split('T')[0]}</span></div><div class="text-xs text-slate-700 mt-1 font-bold">${x.item} x ${x.cantidad}</div><div class="text-[10px] text-slate-500 mt-1">${x.proveedor?('Proveedor: '+x.proveedor+' | '):''}${x.beneficiario?('Beneficiario: '+x.beneficiario+' | '):''}${x.detalle||''}</div><div class="text-[10px] font-bold text-slate-400 mt-1">${x.usuario||''}</div></div>`).join('') : '<div class="text-xs text-slate-400 font-bold italic">Sin movimientos de inventario para este folio.</div>';
+    },
+    escapeCsv(v){
+        const s = String(v ?? '');
+        return /[",\n\r]/.test(s) ? `"${s.replaceAll('"','""')}"` : s;
+    },
+    downloadCsv(filename, rows){
+        if(!rows || !rows.length) return alert("No hay datos para exportar.");
+        const headers = Object.keys(rows[0]);
+        const csv = [headers.join(',')].concat(rows.map(r => headers.map(h => this.escapeCsv(r[h])).join(','))).join('\r\n');
+        const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(url), 1000);
+    },
+    exportHistorial(){
+        const folio = Store.currentEditId || 'gestion';
+        const rows = (Store.currentHistory||[]).map(x=>({Folio:folio, Fecha:x.t||'', Accion:x.a||'', Usuario:x.u||'', Detalle:x.d||''}));
+        this.downloadCsv(`historial_${folio}.csv`, rows);
+    },
+    exportMovimientos(){
+        const folio = Store.currentEditId || 'gestion';
+        const rows = (Store.currentMovements||[]).map(x=>({Folio:folio, Fecha:x.t||'', Tipo:x.tipo||'', Insumo:x.item||'', Cantidad:x.cantidad||0, Proveedor:x.proveedor||'', Beneficiario:x.beneficiario||'', Usuario:x.usuario||'', Detalle:x.detalle||''}));
+        this.downloadCsv(`movimientos_${folio}.csv`, rows);
     },
     openInventarioMovimientoActual(){
         document.getElementById('modalInv').classList.remove('hidden');
