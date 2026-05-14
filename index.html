@@ -150,10 +150,11 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="border-2 border-slate-100 rounded-3xl p-6 bg-slate-50/50 shadow-sm">
               <div class="flex justify-between items-center mb-5"><h4 class="font-bold text-sm text-slate-700">Insumos Solicitados</h4></div>
-              <div class="flex gap-2 mb-4">
-                  <select id="selInvItem" class="bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-xs flex-1 outline-none font-bold text-slate-700 focus:border-panBlue"></select>
-                  <input id="inpInvCant" type="number" class="bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-xs w-20 text-center outline-none font-bold text-slate-700 focus:border-panBlue" placeholder="Cant">
-                  <button type="button" id="btnAddItem" class="text-[10px] font-bold bg-white hover:bg-panBlue hover:text-white px-4 py-2 rounded-xl border-2 border-slate-100 text-slate-500 transition shadow-sm uppercase"><i class="fa-solid fa-plus"></i> Agregar</button>
+              <div class="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(10rem,14rem)_5rem_auto] gap-2 mb-4 items-center">
+                  <select id="selInvItem" class="w-full min-w-0 bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-xs outline-none font-bold text-slate-700 focus:border-panBlue"></select>
+                  <input id="inpInvManual" type="text" class="w-full min-w-0 bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-xs outline-none font-bold text-slate-700 focus:border-panBlue" placeholder="O escribe insumo">
+                  <input id="inpInvCant" type="number" class="w-full bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-xs text-center outline-none font-bold text-slate-700 focus:border-panBlue" placeholder="Cant">
+                  <button type="button" id="btnAddItem" class="h-11 whitespace-nowrap text-[10px] font-bold bg-white hover:bg-panBlue hover:text-white px-4 py-2 rounded-xl border-2 border-slate-100 text-slate-500 transition shadow-sm uppercase"><i class="fa-solid fa-plus"></i> Agregar</button>
               </div>
               <div id="itemsContainer" class="space-y-3"></div>
             </div>
@@ -529,12 +530,13 @@ const UI={
 
     appendItemRow(i={}){
         if(!i.Item){
-            const sel = document.getElementById('selInvItem'); const cant = document.getElementById('inpInvCant');
+            const sel = document.getElementById('selInvItem'); const manual = document.getElementById('inpInvManual'); const cant = document.getElementById('inpInvCant');
             const qty = Number(cant.value);
-            if(!sel.value) return alert("Selecciona un insumo.");
+            const itemName = String(sel.value || manual?.value || '').trim();
+            if(!itemName) return alert("Selecciona o escribe un insumo.");
             if(!Number.isFinite(qty) || qty <= 0) return alert("La cantidad debe ser un número mayor a 0.");
-            i = {Item: sel.value, Cantidad: qty};
-            sel.value = ""; cant.value = "";
+            i = {Item: itemName, Cantidad: qty};
+            sel.value = ""; if(manual) manual.value = ""; cant.value = "";
         }
         document.getElementById('itemsContainer').insertAdjacentHTML('beforeend',`<div class="flex gap-3 item-row bg-white p-3 rounded-2xl border-2 border-slate-100 shadow-sm items-center transition"><div class="flex-[3]"><input readonly value="${i.Item||''}" class="w-full bg-transparent border-none text-xs text-slate-700 font-bold item-name outline-none"></div><div class="flex-1"><input type="number" value="${i.Cantidad||''}" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 font-bold text-center outline-none focus:border-panBlue item-qty"></div><button type="button" onclick="this.parentElement.remove()" class="h-8 w-8 rounded-lg bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition flex items-center justify-center"><i class="fa-solid fa-trash-can text-xs"></i></button></div>`);
     },
